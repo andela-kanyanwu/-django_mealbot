@@ -1,4 +1,7 @@
 *.pyc
-/rtmbot.conf
-/plugins/**
-env
+/../rtmbot.conf
+/../plugins/**
+../env
+#database
+db.sqlite3
+__pycache__/
