@@ -3,6 +3,8 @@
 import sys
 sys.dont_write_bytecode = True
 
+from django.conf import settings
+
 import glob
 import yaml
 import json
@@ -14,9 +16,6 @@ from argparse import ArgumentParser
 
 from slackclient import SlackClient
 
-def dbg(debug_string):
-    if debug:
-        logging.info(debug_string)
 
 class RtmBot(object):
     def __init__(self, token):
@@ -47,7 +46,7 @@ class RtmBot(object):
     def input(self, data):
         if "type" in data:
             function_name = "process_" + data["type"]
-            dbg("got {}".format(function_name))
+            logging.debug("got {}".format(function_name))
             for plugin in self.bot_plugins:
                 plugin.register_jobs()
                 plugin.do(function_name, data)
@@ -67,16 +66,18 @@ class RtmBot(object):
         for plugin in self.bot_plugins:
             plugin.do_jobs()
     def load_plugins(self):
-        for plugin in glob.glob(directory+'/plugins/*'):
+        import plugins
+
+        for plugin in glob.glob(os.path.join(plugins.__path__[0], '*')):
             sys.path.insert(0, plugin)
-            sys.path.insert(0, directory+'/plugins/')
-        for plugin in glob.glob(directory+'/plugins/*.py') + glob.glob(directory+'/plugins/*/*.py'):
+            sys.path.insert(0, os.path.join(plugins.__path__[0]))
+        for plugin in glob.glob(os.path.join(plugins.__path__[0], '*.py')) + glob.glob(os.path.join(plugins.__path__[0], '*','*.py')):
             logging.info(plugin)
-            name = plugin.split('/')[-1][:-3]
-#            try:
-            self.bot_plugins.append(Plugin(name))
-#            except:
-#                print "error loading plugin %s" % name
+            name = os.path.split(plugin)[-1][:-3]
+            try:
+                self.bot_plugins.append(Plugin(name))
+            except:
+                print "error loading plugin %s" % name
 
 class Plugin(object):
     def __init__(self, name, plugin_config={}):
@@ -85,6 +86,8 @@ class Plugin(object):
         self.module = __import__(name)
         self.register_jobs()
         self.outputs = []
+        config = settings.__dict__
+
         if name in config:
             logging.info("config found for: " + name)
             self.module.config = config[name]
@@ -101,18 +104,18 @@ class Plugin(object):
     def do(self, function_name, data):
         if function_name in dir(self.module):
             #this makes the plugin fail with stack trace in debug mode
-            if not debug:
+            if not settings.DEBUG:
                 try:
                     eval("self.module."+function_name)(data)
                 except:
-                    dbg("problem in module {} {}".format(function_name, data))
+                    logging.debug("problem in module {} {}".format(function_name, data))
             else:
                 eval("self.module."+function_name)(data)
         if "catch_all" in dir(self.module):
             try:
                 self.module.catch_all(data)
             except:
-                dbg("problem in catch all")
+                logging.debug("problem in catch all")
     def do_jobs(self):
         for job in self.jobs:
             job.check()
@@ -144,7 +147,7 @@ class Job(object):
                 try:
                     self.function()
                 except:
-                    dbg("problem")
+                    logging.debug("problem")
             else:
                 self.function()
             self.lastrun = time.time()
@@ -155,9 +158,10 @@ class UnknownChannel(Exception):
 
 
 def main_loop():
-    if "LOGFILE" in config:
-        logging.basicConfig(filename=config["LOGFILE"], level=logging.INFO, format='%(asctime)s %(message)s')
-    logging.info(directory)
+    if "LOGFILE" in settings.__dict__:
+        logging.basicConfig(filename=settings.LOGFILE, level=logging.INFO, format='%(asctime)s %(message)s')
+    # logging.info(directory)
+    bot = RtmBot(settings.SLACK_TOKEN)
     try:
         bot.start()
     except KeyboardInterrupt:
@@ -177,25 +181,29 @@ def parse_args():
     return parser.parse_args()
 
 
-if __name__ == "__main__":
-    args = parse_args()
-    directory = os.path.dirname(sys.argv[0])
-    if not directory.startswith('/'):
-        directory = os.path.abspath("{}/{}".format(os.getcwd(),
-                                directory
-                                ))
+def main():
+    # args = parse_args()
+    # directory = os.path.dirname(sys.argv[0])
+    # if not directory.startswith('/'):
+    #     directory = os.path.abspath("{}/{}".format(os.getcwd(),
+    #                             directory
+    #                             ))
 
-    config = yaml.load(file(args.config or 'rtmbot.conf', 'r'))
-    debug = config["DEBUG"]
-    bot = RtmBot(config["SLACK_TOKEN"])
+    # config = yaml.load(file(args.config or 'rtmbot.conf', 'r'))
+    # debug = config["DEBUG"]
+    # bot = RtmBot(config["SLACK_TOKEN"])
+
     site_plugins = []
     files_currently_downloading = []
     job_hash = {}
 
-    if config.has_key("DAEMON"):
-        if config["DAEMON"]:
-            import daemon
-            with daemon.DaemonContext():
-                main_loop()
+    # if config.has_key("DAEMON"):
+    #     if config["DAEMON"]:
+    #         import daemon
+    #         with daemon.DaemonContext():
+    #             main_loop()
     main_loop()
 
+
+if __name__ == "__main__":
+    main()

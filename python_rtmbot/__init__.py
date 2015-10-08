@@ -1,5 +1,3 @@
-import os
+from rtmbot import main
 
-os.system('python ./rtmbot.py')
-# python ./rtmbot.py
-# ./manage.py shell <<EOF\ execfile('python_rtmbot/rtmbot.py') \EOF
+main()
